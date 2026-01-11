@@ -285,10 +285,10 @@ void RFDETREngine::preprocess(const cv::Mat& image) {
             g_f = _mm512_sub_ps(_mm512_mul_ps(g_f, inv_std_g_vec), mean_g_vec);
             b_f = _mm512_sub_ps(_mm512_mul_ps(b_f, inv_std_b_vec), mean_b_vec);
 
-            // Store in CHW layout (aligned for better performance)
-            _mm512_store_ps(&input_tensor_values_[i], r_f);
-            _mm512_store_ps(&input_tensor_values_[image_area + i], g_f);
-            _mm512_store_ps(&input_tensor_values_[2 * image_area + i], b_f);
+            // Store in CHW layout
+            _mm512_storeu_ps(&input_tensor_values_[i], r_f);
+            _mm512_storeu_ps(&input_tensor_values_[image_area + i], g_f);
+            _mm512_storeu_ps(&input_tensor_values_[2 * image_area + i], b_f);
         }
     } else
 #endif
@@ -333,10 +333,10 @@ void RFDETREngine::preprocess(const cv::Mat& image) {
             g_f = _mm256_sub_ps(_mm256_mul_ps(g_f, inv_std_g_vec), mean_g_vec);
             b_f = _mm256_sub_ps(_mm256_mul_ps(b_f, inv_std_b_vec), mean_b_vec);
 
-            // Store (aligned for better performance)
-            _mm256_store_ps(&input_tensor_values_[i], r_f);
-            _mm256_store_ps(&input_tensor_values_[image_area + i], g_f);
-            _mm256_store_ps(&input_tensor_values_[2 * image_area + i], b_f);
+            // Store
+            _mm256_storeu_ps(&input_tensor_values_[i], r_f);
+            _mm256_storeu_ps(&input_tensor_values_[image_area + i], g_f);
+            _mm256_storeu_ps(&input_tensor_values_[2 * image_area + i], b_f);
         }
     } else
 #endif
