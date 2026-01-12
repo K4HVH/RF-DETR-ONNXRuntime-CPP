@@ -37,7 +37,8 @@ class ONNXOptimizer:
     }
 
     def __init__(self, input_model: str, output_model: str, precision: str,
-                 target: str, opt_level: str, tensorrt_path: Optional[str] = None,
+                 target: str, opt_level: str, provider: Optional[str] = None,
+                 tensorrt_path: Optional[str] = None,
                  per_channel: bool = True, reduce_range: bool = False):
         """
         Initialize optimizer
@@ -48,6 +49,7 @@ class ONNXOptimizer:
             precision: One of 'fp32', 'fp16', 'int8'
             target: One of 'cpu', 'gpu'
             opt_level: One of 'disable', 'basic', 'extended', 'all'
+            provider: Execution provider ('cpu', 'cuda', 'rocm', 'dml', 'tensorrt')
             tensorrt_path: Optional path to TensorRT installation
             per_channel: Use per-channel quantization (better accuracy)
             reduce_range: Reduce quantization range for CPU compatibility
@@ -57,6 +59,7 @@ class ONNXOptimizer:
         self.precision = precision.lower()
         self.target = target.lower()
         self.opt_level = opt_level.lower()
+        self.provider = provider.lower() if provider else None
         self.tensorrt_path = tensorrt_path
         self.per_channel = per_channel
         self.reduce_range = reduce_range
@@ -89,26 +92,71 @@ class ONNXOptimizer:
         # Check for GPU support if target is GPU
         if self.target == 'gpu':
             available_providers = ort.get_available_providers()
-            if 'CUDAExecutionProvider' not in available_providers and 'TensorrtExecutionProvider' not in available_providers:
+            gpu_providers = {'CUDAExecutionProvider', 'TensorrtExecutionProvider', 'TensorRTRTXExecutionProvider',
+                           'ROCMExecutionProvider', 'DmlExecutionProvider'}
+            if not any(p in available_providers for p in gpu_providers):
                 print(f"Warning: GPU requested but no GPU providers available. Available: {available_providers}")
 
     def _get_execution_providers(self):
-        """Get appropriate execution providers for target"""
+        """Get appropriate execution providers based on explicit provider or target"""
+        # If provider explicitly specified, use it
+        if self.provider:
+            provider_map = {
+                'cpu': 'CPUExecutionProvider',
+                'cuda': 'CUDAExecutionProvider',
+                'rocm': 'ROCMExecutionProvider',
+                'dml': 'DmlExecutionProvider',
+                'tensorrt': 'TensorrtExecutionProvider',
+                'tensorrt-rtx': 'TensorRTRTXExecutionProvider',
+            }
+
+            if self.provider not in provider_map:
+                raise ValueError(f"Unknown provider: {self.provider}. Must be one of: {', '.join(provider_map.keys())}")
+
+            provider_name = provider_map[self.provider]
+            available = ort.get_available_providers()
+
+            if provider_name not in available:
+                raise RuntimeError(f"{provider_name} not available. Available providers: {available}")
+
+            print(f"Using explicit provider: {provider_name}")
+
+            # For TensorRT providers, add options
+            if self.provider in ['tensorrt', 'tensorrt-rtx']:
+                trt_options = {}
+                if self.tensorrt_path:
+                    trt_options['trt_engine_cache_path'] = str(Path(self.output_model).parent)
+                return [(provider_name, trt_options), 'CPUExecutionProvider']
+
+            # Don't duplicate CPU provider
+            if provider_name == 'CPUExecutionProvider':
+                return [provider_name]
+            return [provider_name, 'CPUExecutionProvider']
+
+        # Legacy behavior: auto-detect based on target
         if self.target == 'cpu':
             return ['CPUExecutionProvider']
         else:  # gpu
             providers = []
             available = ort.get_available_providers()
 
-            # Prefer TensorRT, then CUDA, fallback to CPU
-            if 'TensorrtExecutionProvider' in available:
+            # Auto-detect: prefer TensorRT-RTX, TensorRT, CUDA, ROCm, DirectML
+            if 'TensorRTRTXExecutionProvider' in available:
+                trt_options = {}
+                if self.tensorrt_path:
+                    trt_options['trt_engine_cache_path'] = str(Path(self.output_model).parent)
+                providers.append(('TensorRTRTXExecutionProvider', trt_options))
+            elif 'TensorrtExecutionProvider' in available:
                 trt_options = {}
                 if self.tensorrt_path:
                     trt_options['trt_engine_cache_path'] = str(Path(self.output_model).parent)
                 providers.append(('TensorrtExecutionProvider', trt_options))
-
-            if 'CUDAExecutionProvider' in available:
+            elif 'CUDAExecutionProvider' in available:
                 providers.append('CUDAExecutionProvider')
+            elif 'ROCMExecutionProvider' in available:
+                providers.append('ROCMExecutionProvider')
+            elif 'DmlExecutionProvider' in available:
+                providers.append('DmlExecutionProvider')
 
             # Always add CPU as fallback
             providers.append('CPUExecutionProvider')
@@ -167,18 +215,40 @@ class ONNXOptimizer:
             sess_options.inter_op_num_threads = 1
             sess_options.intra_op_num_threads = 1
 
-        # Get providers
-        # Note: Exclude TensorRT for graph optimization (it creates compiled nodes that can't be serialized)
-        if self.target == 'gpu':
+        # Get providers for optimization
+        # Note: TensorRT can't serialize optimized graphs, so fall back to CUDA for optimization
+        if self.provider:
+            if self.provider in ['tensorrt', 'tensorrt-rtx']:
+                print("Note: Using CUDA for graph optimization (TensorRT can't serialize optimized graphs)")
+                providers = ['CUDAExecutionProvider', 'CPUExecutionProvider']
+            elif self.provider == 'cpu':
+                providers = ['CPUExecutionProvider']
+            else:
+                provider_map = {
+                    'cuda': 'CUDAExecutionProvider',
+                    'rocm': 'ROCMExecutionProvider',
+                    'dml': 'DmlExecutionProvider',
+                }
+                providers = [provider_map[self.provider], 'CPUExecutionProvider']
+        elif self.target == 'gpu':
+            # Legacy auto-detect
+            # Note: TensorRT providers can't serialize, so use CUDA for optimization
             available = ort.get_available_providers()
             providers = []
-            if 'CUDAExecutionProvider' in available:
+            if any(p in available for p in ['TensorRTRTXExecutionProvider', 'TensorrtExecutionProvider']):
+                print("Note: TensorRT detected, using CUDA for graph optimization")
                 providers.append('CUDAExecutionProvider')
+            elif 'CUDAExecutionProvider' in available:
+                providers.append('CUDAExecutionProvider')
+            elif 'ROCMExecutionProvider' in available:
+                providers.append('ROCMExecutionProvider')
+            elif 'DmlExecutionProvider' in available:
+                providers.append('DmlExecutionProvider')
             providers.append('CPUExecutionProvider')
         else:
             providers = ['CPUExecutionProvider']
 
-        print(f"Using providers: {providers}")
+        print(f"Optimizing with providers: {providers}")
 
         session = ort.InferenceSession(input_path, sess_options, providers=providers)
 
@@ -349,8 +419,20 @@ Examples:
   # Quantize to INT8 for CPU
   python optimize_onnx.py model.onnx model_int8.onnx --precision int8 --target cpu --opt-level all
 
-  # Convert to FP16 for GPU with TensorRT
-  python optimize_onnx.py model.onnx model_fp16.onnx --precision fp16 --target gpu --opt-level all
+  # Convert to FP16 for CUDA GPU
+  python optimize_onnx.py model.onnx model_fp16.onnx --precision fp16 --target gpu --opt-level all --provider cuda
+
+  # Convert to FP16 for TensorRT
+  python optimize_onnx.py model.onnx model_fp16.onnx --precision fp16 --target gpu --opt-level all --provider tensorrt
+
+  # Convert to FP16 for TensorRT-RTX
+  python optimize_onnx.py model.onnx model_fp16.onnx --precision fp16 --target gpu --opt-level all --provider tensorrt-rtx
+
+  # Convert to FP16 for ROCm (AMD GPU)
+  python optimize_onnx.py model.onnx model_fp16.onnx --precision fp16 --target gpu --opt-level all --provider rocm
+
+  # Convert to FP16 for DirectML (Windows)
+  python optimize_onnx.py model.onnx model_fp16.onnx --precision fp16 --target gpu --opt-level all --provider dml
 
   # CPU-compatible INT8 with per-tensor quantization
   python optimize_onnx.py model.onnx model_int8.onnx --precision int8 --target cpu --no-per-channel --reduce-range
@@ -373,6 +455,10 @@ Examples:
     parser.add_argument('--opt-level', type=str, default='extended',
                         choices=['disable', 'basic', 'extended', 'all'],
                         help='Graph optimization level (default: extended)')
+
+    parser.add_argument('--provider', type=str, default=None,
+                        choices=['cpu', 'cuda', 'rocm', 'dml', 'tensorrt', 'tensorrt-rtx'],
+                        help='Explicit execution provider for optimization (default: auto-detect)')
 
     # Quantization settings
     parser.add_argument('--no-per-channel', dest='per_channel', action='store_false',
@@ -408,6 +494,7 @@ Examples:
             precision=args.precision,
             target=args.target,
             opt_level=args.opt_level,
+            provider=args.provider,
             tensorrt_path=args.tensorrt_path,
             per_channel=args.per_channel,
             reduce_range=args.reduce_range
