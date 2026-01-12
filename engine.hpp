@@ -43,10 +43,12 @@ public:
      * @param model_path Path to ONNX model file
      * @param log_id Logging identifier for ONNX Runtime
      * @param provider Execution provider ("CPUExecutionProvider" or "CUDAExecutionProvider")
+     * @param opt_level Graph optimization level ("disable", "basic", "extended", "all")
      */
     RFDETREngine(const std::wstring& model_path,
                  const char* log_id = "RF-DETR",
-                 const char* provider = "CPUExecutionProvider");
+                 const char* provider = "CPUExecutionProvider",
+                 const char* opt_level = "extended");
 
     /**
      * @brief Run inference on an image

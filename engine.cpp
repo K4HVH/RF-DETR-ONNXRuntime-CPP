@@ -26,14 +26,36 @@
 
 RFDETREngine::RFDETREngine(const std::wstring& model_path,
                            const char* log_id,
-                           const char* provider)
+                           const char* provider,
+                           const char* opt_level)
     : env_(ORT_LOGGING_LEVEL_WARNING, log_id),
       memory_info_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)) {
 
     std::cout << "Initializing RF-DETR Engine..." << std::endl;
 
-    // MINIMAL session options - but enable graph optimizations
-    session_options_.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
+    // Set graph optimization level based on parameter
+    GraphOptimizationLevel opt_level_enum;
+    std::string opt_level_str(opt_level);
+
+    if (opt_level_str == "disable") {
+        opt_level_enum = GraphOptimizationLevel::ORT_DISABLE_ALL;
+        std::cout << "Graph optimization: DISABLED" << std::endl;
+    } else if (opt_level_str == "basic") {
+        opt_level_enum = GraphOptimizationLevel::ORT_ENABLE_BASIC;
+        std::cout << "Graph optimization: BASIC" << std::endl;
+    } else if (opt_level_str == "extended") {
+        opt_level_enum = GraphOptimizationLevel::ORT_ENABLE_EXTENDED;
+        std::cout << "Graph optimization: EXTENDED" << std::endl;
+    } else if (opt_level_str == "all") {
+        opt_level_enum = GraphOptimizationLevel::ORT_ENABLE_ALL;
+        std::cout << "Graph optimization: ALL (hardware-specific)" << std::endl;
+    } else {
+        std::cerr << "Warning: Unknown optimization level '" << opt_level_str
+                  << "', defaulting to EXTENDED" << std::endl;
+        opt_level_enum = GraphOptimizationLevel::ORT_ENABLE_EXTENDED;
+    }
+
+    session_options_.SetGraphOptimizationLevel(opt_level_enum);
 
     if (std::string(provider) == "CUDAExecutionProvider") {
         OrtCUDAProviderOptions cuda_options{};
