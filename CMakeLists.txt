@@ -77,6 +77,30 @@ endif()
 include_directories(${ONNXRUNTIME_INCLUDE_DIR})
 link_directories(${ONNXRUNTIME_LIB_DIR})
 
+# CUDA Support
+set(CUDA_TOOLKIT_ROOT "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA")
+file(GLOB CUDA_VERSION_DIRS "${CUDA_TOOLKIT_ROOT}/v*")
+if(CUDA_VERSION_DIRS)
+    list(SORT CUDA_VERSION_DIRS)
+    list(REVERSE CUDA_VERSION_DIRS)
+    list(GET CUDA_VERSION_DIRS 0 CUDA_TOOLKIT_DIR)
+    set(CUDA_INCLUDE_DIR "${CUDA_TOOLKIT_DIR}/include")
+    set(CUDA_LIB_DIR "${CUDA_TOOLKIT_DIR}/lib/x64")
+
+    if(EXISTS ${CUDA_INCLUDE_DIR})
+        message(STATUS "Found CUDA at: ${CUDA_TOOLKIT_DIR}")
+        include_directories(${CUDA_INCLUDE_DIR})
+        link_directories(${CUDA_LIB_DIR})
+        set(CUDA_FOUND TRUE)
+    else()
+        message(WARNING "CUDA headers not found, GPU support may be limited")
+        set(CUDA_FOUND FALSE)
+    endif()
+else()
+    message(WARNING "CUDA Toolkit not found at ${CUDA_TOOLKIT_ROOT}")
+    set(CUDA_FOUND FALSE)
+endif()
+
 # Source files
 set(SOURCES
     engine.cpp
@@ -91,6 +115,11 @@ target_link_libraries(${PROJECT_NAME}
     ${OpenCV_LIBS}
     onnxruntime
 )
+
+# Link CUDA runtime if available
+if(CUDA_FOUND)
+    target_link_libraries(${PROJECT_NAME} cudart)
+endif()
 
 # Copy ONNX Runtime DLL to output directory (Windows)
 if(WIN32)

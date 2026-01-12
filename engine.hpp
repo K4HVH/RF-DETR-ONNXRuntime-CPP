@@ -62,9 +62,9 @@ public:
     std::vector<Detection> infer(cv::Mat& image, float conf_threshold = 0.5f);
 
     /**
-     * @brief Destructor - RAII cleanup of ONNX Runtime resources
+     * @brief Destructor - RAII cleanup of ONNX Runtime and CUDA resources
      */
-    ~RFDETREngine() = default;
+    ~RFDETREngine();
 
 private:
     // Model configuration - dynamically inferred from ONNX model (const after init)
@@ -83,8 +83,14 @@ private:
     Ort::Env env_;
     Ort::SessionOptions session_options_;
     std::unique_ptr<Ort::Session> session_;
-    Ort::MemoryInfo memory_info_;
+    Ort::MemoryInfo memory_info_;  // CPU or CUDA memory
     Ort::AllocatorWithDefaultOptions allocator_;
+
+    // Provider tracking
+    bool use_cuda_;
+
+    // CUDA-specific memory info (only initialized if using CUDA)
+    std::unique_ptr<Ort::MemoryInfo> cuda_memory_info_;
 
     // Input/Output tensor names (stored as strings to ensure lifetime)
     std::vector<std::string> input_names_storage_;
@@ -101,6 +107,14 @@ private:
     alignas(64) std::vector<float> output_logits_buffer_;
     std::vector<int64_t> output_boxes_shape_;
     std::vector<int64_t> output_logits_shape_;
+
+    // CUDA device buffers (only allocated if using CUDA)
+    void* cuda_input_buffer_;
+    void* cuda_output_boxes_buffer_;
+    void* cuda_output_logits_buffer_;
+    size_t cuda_input_size_;
+    size_t cuda_output_boxes_size_;
+    size_t cuda_output_logits_size_;
 
     // Original image dimensions (for denormalization)
     int original_width_;
