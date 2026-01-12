@@ -9,7 +9,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).parent.parent
 BUILD_DIR = PROJECT_ROOT / "build"
-MODEL_PATH = "models/rf-detr-nano-cpu-compat.onnx"
+MODEL_PATH = "models/rf-detr-nano-cpu-int8.onnx"
 BENCHMARK_RUNS = 3  # Number of complete benchmark cycles
 
 def run_command(cmd, cwd=None):
