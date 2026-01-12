@@ -27,7 +27,8 @@
 RFDETREngine::RFDETREngine(const std::wstring& model_path,
                            const char* log_id,
                            const char* provider,
-                           const char* opt_level)
+                           const char* opt_level,
+                           const char* cpu_mode)
     : env_(ORT_LOGGING_LEVEL_WARNING, log_id),
       memory_info_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)) {
 
@@ -57,12 +58,25 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
 
     session_options_.SetGraphOptimizationLevel(opt_level_enum);
 
+    // Configure execution provider
     if (std::string(provider) == "CUDAExecutionProvider") {
         OrtCUDAProviderOptions cuda_options{};
         session_options_.AppendExecutionProvider_CUDA(cuda_options);
         std::cout << "Using CUDA execution provider" << std::endl;
     } else {
-        std::cout << "Using CPU execution provider (minimal config)" << std::endl;
+        std::cout << "Using CPU execution provider" << std::endl;
+
+        // Configure CPU threading mode
+        std::string cpu_mode_str(cpu_mode);
+        if (cpu_mode_str == "high-thread-count") {
+            // Optimal for high core count systems (>16 cores)
+            session_options_.SetIntraOpNumThreads(8);
+            session_options_.SetInterOpNumThreads(1);
+            std::cout << "  CPU Mode: HIGH-THREAD-COUNT" << std::endl;
+        } else {
+            // Let ONNX Runtime auto-detect optimal settings
+            std::cout << "  CPU Mode: AUTO" << std::endl;
+        }
     }
 
     // Create session

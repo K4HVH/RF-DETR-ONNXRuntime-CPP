@@ -40,7 +40,7 @@ def configure_and_build(simd_level):
 def run_single_benchmark():
     """Run single benchmark and extract time"""
     exe_path = BUILD_DIR / "Release" / "RF-DETR-ONNXRuntime-CPP.exe"
-    cmd = f'"{exe_path}" {MODEL_PATH} test.jpg 0.5'
+    cmd = f'"{exe_path}" {MODEL_PATH} test.jpg 0.5 CPUExecutionProvider extended high-thread-count'
 
     output = run_command(cmd)
 

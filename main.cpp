@@ -92,12 +92,14 @@ int main(int argc, char** argv) {
     float conf_threshold = 0.5f;
     std::string provider = "CPUExecutionProvider";
     std::string opt_level = "extended";
+    std::string cpu_mode = "high-thread-count";
 
     if (argc > 1) model_path = argv[1];
     if (argc > 2) image_path = argv[2];
     if (argc > 3) conf_threshold = std::stof(argv[3]);
     if (argc > 4) provider = argv[4];
     if (argc > 5) opt_level = argv[5];
+    if (argc > 6) cpu_mode = argv[6];
 
     std::cout << "Configuration:" << std::endl;
     std::cout << "  Model: " << model_path << std::endl;
@@ -105,12 +107,13 @@ int main(int argc, char** argv) {
     std::cout << "  Confidence Threshold: " << conf_threshold << std::endl;
     std::cout << "  Execution Provider: " << provider << std::endl;
     std::cout << "  Optimization Level: " << opt_level << std::endl;
+    std::cout << "  CPU Mode: " << cpu_mode << std::endl;
     std::cout << std::endl;
 
     try {
         // Initialize engine
         std::wstring model_path_w(model_path.begin(), model_path.end());
-        RFDETREngine engine(model_path_w, "RF-DETR", provider.c_str(), opt_level.c_str());
+        RFDETREngine engine(model_path_w, "RF-DETR", provider.c_str(), opt_level.c_str(), cpu_mode.c_str());
 
         // Load image
         std::cout << "Loading image: " << image_path << std::endl;
