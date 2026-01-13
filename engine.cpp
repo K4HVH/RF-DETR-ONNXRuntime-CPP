@@ -115,7 +115,9 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
             "trt_engine_cache_path",
             "trt_timing_cache_enable",
             "trt_fp16_enable",
-            "trt_cuda_graph_enable"
+            "trt_cuda_graph_enable",
+            "trt_sparsity_enable",
+            "trt_context_memory_sharing_enable"
         };
 
         const char* values[] = {
@@ -124,18 +126,22 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
             "./trt_cache",          // Cache directory
             "1",                    // Enable timing cache
             use_fp16 ? "1" : "0",  // FP16 mode
-            "1"                     // Enable CUDA graphs
+            "1",                    // Enable CUDA graphs
+            "1",                    // Enable sparsity optimization
+            "1"                     // Enable context memory sharing
         };
 
         OrtTensorRTProviderOptionsV2* trt_options = nullptr;
         Ort::GetApi().CreateTensorRTProviderOptions(&trt_options);
-        Ort::GetApi().UpdateTensorRTProviderOptions(trt_options, keys, values, 6);
+        Ort::GetApi().UpdateTensorRTProviderOptions(trt_options, keys, values, 8);
         session_options_.AppendExecutionProvider_TensorRT_V2(*trt_options);
         Ort::GetApi().ReleaseTensorRTProviderOptions(trt_options);
 
         std::cout << "  Engine cache: ./trt_cache" << std::endl;
         std::cout << "  Timing cache: enabled" << std::endl;
         std::cout << "  CUDA graphs: enabled" << std::endl;
+        std::cout << "  Sparsity: enabled" << std::endl;
+        std::cout << "  Context memory sharing: enabled" << std::endl;
     } else {
         std::cout << "Using CPU execution provider" << std::endl;
 
