@@ -25,6 +25,18 @@ struct Detection {
 };
 
 /**
+ * @brief Execution provider type enumeration
+ *
+ * Defines available execution providers for ONNX Runtime inference
+ */
+enum class ExecutionProvider {
+    CPU,            ///< CPU execution with SIMD optimizations
+    CUDA,           ///< NVIDIA CUDA execution with CUDA graphs
+    TensorRT,       ///< NVIDIA TensorRT with engine caching
+    TensorRT_RTX    ///< NVIDIA TensorRT-RTX optimized for RTX GPUs
+};
+
+/**
  * @brief RF-DETR Inference Engine
  *
  * High-performance C++20 implementation of RF-DETR object detection using ONNX Runtime.
@@ -42,15 +54,17 @@ public:
      *
      * @param model_path Path to ONNX model file
      * @param log_id Logging identifier for ONNX Runtime
-     * @param provider Execution provider ("CPUExecutionProvider" or "CUDAExecutionProvider")
+     * @param provider Execution provider ("CPUExecutionProvider", "CUDAExecutionProvider", "TensorrtExecutionProvider")
      * @param opt_level Graph optimization level ("disable", "basic", "extended", "all")
      * @param cpu_mode CPU threading mode ("auto" or "high-thread-count")
+     * @param use_fp16 Enable FP16 mode for TensorRT (GPU providers only)
      */
     RFDETREngine(const std::wstring& model_path,
                  const char* log_id = "RF-DETR",
                  const char* provider = "CPUExecutionProvider",
                  const char* opt_level = "extended",
-                 const char* cpu_mode = "auto");
+                 const char* cpu_mode = "auto",
+                 bool use_fp16 = false);
 
     /**
      * @brief Run inference on an image
@@ -87,7 +101,7 @@ private:
     Ort::AllocatorWithDefaultOptions allocator_;
 
     // Provider tracking
-    bool use_cuda_;
+    ExecutionProvider provider_type_;
 
     // CUDA-specific memory info (only initialized if using CUDA)
     std::unique_ptr<Ort::MemoryInfo> cuda_memory_info_;

@@ -22,3 +22,4 @@ CMakeUserPresets.json
 build/
 out/
 output.jpg
+trt_cache/

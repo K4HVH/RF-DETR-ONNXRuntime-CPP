@@ -86,6 +86,43 @@ int main(int argc, char** argv) {
     std::cout << "========================================" << std::endl;
     std::cout << std::endl;
 
+    // Show help if requested
+    if (argc == 2 && (std::string(argv[1]) == "--help" || std::string(argv[1]) == "-h")) {
+        std::cout << "Usage: " << argv[0] << " [model] [image] [conf] [provider] [opt] [cpu_mode] [fp16]" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Arguments:" << std::endl;
+        std::cout << "  model       Path to ONNX model file (default: rf-detr-nano.onnx)" << std::endl;
+        std::cout << "  image       Path to input image (default: test.jpg)" << std::endl;
+        std::cout << "  conf        Confidence threshold 0.0-1.0 (default: 0.5)" << std::endl;
+        std::cout << "  provider    Execution provider (default: CPUExecutionProvider)" << std::endl;
+        std::cout << "  opt         Optimization level (default: extended)" << std::endl;
+        std::cout << "  cpu_mode    CPU threading mode (default: high-thread-count)" << std::endl;
+        std::cout << "  fp16        Enable FP16 for TensorRT: 0=FP32, 1=FP16 (default: 0)" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Execution Providers:" << std::endl;
+        std::cout << "  CPUExecutionProvider           - CPU inference with SIMD optimizations" << std::endl;
+        std::cout << "  CUDAExecutionProvider          - NVIDIA CUDA GPU inference" << std::endl;
+        std::cout << "  TensorrtExecutionProvider      - NVIDIA TensorRT with engine caching" << std::endl;
+        std::cout << "                                   Use fp16=1 for FP16 mode" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Optimization Levels:" << std::endl;
+        std::cout << "  disable     - No graph optimizations" << std::endl;
+        std::cout << "  basic       - Basic optimizations" << std::endl;
+        std::cout << "  extended    - Extended optimizations (recommended)" << std::endl;
+        std::cout << "  all         - All hardware-specific optimizations" << std::endl;
+        std::cout << std::endl;
+        std::cout << "CPU Threading Modes:" << std::endl;
+        std::cout << "  auto                - Auto-detect optimal settings" << std::endl;
+        std::cout << "  high-thread-count   - Optimized for >16 CPU cores" << std::endl;
+        std::cout << std::endl;
+        std::cout << "Examples:" << std::endl;
+        std::cout << "  # TensorRT FP32" << std::endl;
+        std::cout << "  " << argv[0] << " model.onnx image.jpg 0.5 TensorrtExecutionProvider extended auto 0" << std::endl;
+        std::cout << "  # TensorRT FP16" << std::endl;
+        std::cout << "  " << argv[0] << " model.onnx image.jpg 0.5 TensorrtExecutionProvider extended auto 1" << std::endl;
+        return 0;
+    }
+
     // Parse command line arguments
     std::string model_path = "rf-detr-nano.onnx";
     std::string image_path = "test.jpg";
@@ -93,13 +130,27 @@ int main(int argc, char** argv) {
     std::string provider = "CPUExecutionProvider";
     std::string opt_level = "extended";
     std::string cpu_mode = "high-thread-count";
+    bool use_fp16 = false;
 
     if (argc > 1) model_path = argv[1];
     if (argc > 2) image_path = argv[2];
     if (argc > 3) conf_threshold = std::stof(argv[3]);
-    if (argc > 4) provider = argv[4];
+    if (argc > 4) {
+        provider = argv[4];
+        // Validate provider
+        if (provider != "CPUExecutionProvider" &&
+            provider != "CUDAExecutionProvider" &&
+            provider != "TensorrtExecutionProvider") {
+            std::cerr << "Error: Unknown provider '" << provider << "'" << std::endl;
+            std::cerr << "Valid providers: CPUExecutionProvider, CUDAExecutionProvider, "
+                      << "TensorrtExecutionProvider" << std::endl;
+            std::cerr << "Use --help for more information" << std::endl;
+            return 1;
+        }
+    }
     if (argc > 5) opt_level = argv[5];
     if (argc > 6) cpu_mode = argv[6];
+    if (argc > 7) use_fp16 = (std::stoi(argv[7]) != 0);
 
     std::cout << "Configuration:" << std::endl;
     std::cout << "  Model: " << model_path << std::endl;
@@ -108,12 +159,13 @@ int main(int argc, char** argv) {
     std::cout << "  Execution Provider: " << provider << std::endl;
     std::cout << "  Optimization Level: " << opt_level << std::endl;
     std::cout << "  CPU Mode: " << cpu_mode << std::endl;
+    std::cout << "  FP16 Mode: " << (use_fp16 ? "ENABLED" : "DISABLED") << std::endl;
     std::cout << std::endl;
 
     try {
         // Initialize engine
         std::wstring model_path_w(model_path.begin(), model_path.end());
-        RFDETREngine engine(model_path_w, "RF-DETR", provider.c_str(), opt_level.c_str(), cpu_mode.c_str());
+        RFDETREngine engine(model_path_w, "RF-DETR", provider.c_str(), opt_level.c_str(), cpu_mode.c_str(), use_fp16);
 
         // Load image
         std::cout << "Loading image: " << image_path << std::endl;

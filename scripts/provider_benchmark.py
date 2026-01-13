@@ -36,9 +36,24 @@ PROVIDER_CONFIGS = {
             "provider": "CUDAExecutionProvider",
             "extra_args": "extended"
         }
+    ],
+    "TensorRT": [
+        {
+            "model": "models/rf-detr-nano.onnx",
+            "name": "TensorRT-FP32",
+            "provider": "TensorrtExecutionProvider",
+            "extra_args": "extended auto 0"
+        },
+        {
+            "model": "models/rf-detr-nano.onnx",
+            "name": "TensorRT-FP16",
+            "provider": "TensorrtExecutionProvider",
+            "extra_args": "extended auto 1"
+        }
     ]
-    # Note: FP16 model not included because it requires disabling CUDA graph capture
-    # due to CPU fallback operations. For FP16, use TensorRT ExecutionProvider instead.
+    # Note: Both FP32 and FP16 use the same FP32 model (rf-detr-nano.onnx)
+    # TensorRT converts FP32->FP16 internally when fp16 flag is enabled
+    # First run will be slow (engine building), subsequent runs fast (cache loaded)
 }
 
 def run_command(cmd, cwd=None):
@@ -164,13 +179,15 @@ def main():
     print("-"*80)
 
     # Group results by provider
-    for provider_name in ["CPU", "CUDA"]:
+    for provider_name in ["CPU", "CUDA", "TensorRT"]:
+        if provider_name not in PROVIDER_CONFIGS:
+            continue
         print(f"\n{provider_name}:")
         for config in PROVIDER_CONFIGS[provider_name]:
             name = config['name']
             if name in results:
                 r = results[name]
-                print(f"  {name:<13} {r['avg']:>10.2f} {r['stdev']:>10.2f} "
+                print(f"  {name:<20} {r['avg']:>10.2f} {r['stdev']:>10.2f} "
                       f"{r['min']:>10.2f} {r['max']:>10.2f}")
 
     # Comparison
@@ -194,6 +211,22 @@ def main():
             speedup = ((cpu_int8 - cuda_fp32) / cpu_int8) * 100
             print(f"CPU-INT8 vs CUDA-FP32: {speedup:+.1f}% "
                   f"({'CUDA faster' if speedup > 0 else 'CPU faster'})")
+
+        # CUDA vs TensorRT FP32
+        if "CUDA-FP32" in results and "TensorRT-FP32" in results:
+            cuda_fp32 = results["CUDA-FP32"]['avg']
+            trt_fp32 = results["TensorRT-FP32"]['avg']
+            speedup = ((cuda_fp32 - trt_fp32) / cuda_fp32) * 100
+            print(f"CUDA-FP32 vs TensorRT-FP32: {speedup:+.1f}% "
+                  f"({'TensorRT faster' if speedup > 0 else 'CUDA faster'})")
+
+        # TensorRT FP32 vs FP16
+        if "TensorRT-FP32" in results and "TensorRT-FP16" in results:
+            trt_fp32 = results["TensorRT-FP32"]['avg']
+            trt_fp16 = results["TensorRT-FP16"]['avg']
+            speedup = ((trt_fp32 - trt_fp16) / trt_fp32) * 100
+            print(f"TensorRT-FP32 vs TensorRT-FP16: {speedup:+.1f}% "
+                  f"({'FP16 faster' if speedup > 0 else 'FP32 faster'})")
 
         # Best overall
         best = min(results.items(), key=lambda x: x[1]['avg'])

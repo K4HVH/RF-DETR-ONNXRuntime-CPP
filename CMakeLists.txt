@@ -101,6 +101,17 @@ else()
     set(CUDA_FOUND FALSE)
 endif()
 
+# TensorRT Provider Detection
+if(CUDA_FOUND)
+    if(EXISTS "${ONNXRUNTIME_ROOT}/lib/onnxruntime_providers_tensorrt.dll")
+        message(STATUS "TensorRT provider library found in ONNX Runtime")
+        set(TENSORRT_PROVIDER_AVAILABLE TRUE)
+    else()
+        message(STATUS "TensorRT provider library not found")
+        set(TENSORRT_PROVIDER_AVAILABLE FALSE)
+    endif()
+endif()
+
 # Source files
 set(SOURCES
     engine.cpp
@@ -136,6 +147,16 @@ if(WIN32)
             "${ONNXRUNTIME_ROOT}/lib/onnxruntime_providers_shared.dll"
             $<TARGET_FILE_DIR:${PROJECT_NAME}>
         )
+    endif()
+
+    # Copy TensorRT provider DLL if available
+    if(TENSORRT_PROVIDER_AVAILABLE)
+        add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${ONNXRUNTIME_ROOT}/lib/onnxruntime_providers_tensorrt.dll"
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>
+        )
+        message(STATUS "Will copy TensorRT provider DLL to output directory")
     endif()
 endif()
 

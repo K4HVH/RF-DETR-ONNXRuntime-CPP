@@ -31,10 +31,11 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
                            const char* log_id,
                            const char* provider,
                            const char* opt_level,
-                           const char* cpu_mode)
+                           const char* cpu_mode,
+                           bool use_fp16)
     : env_(ORT_LOGGING_LEVEL_WARNING, log_id),
       memory_info_(Ort::MemoryInfo::CreateCpu(OrtArenaAllocator, OrtMemTypeDefault)),
-      use_cuda_(std::string(provider) == "CUDAExecutionProvider"),
+      provider_type_(ExecutionProvider::CPU),  // Default to CPU, will be set below
       cuda_input_buffer_(nullptr),
       cuda_output_boxes_buffer_(nullptr),
       cuda_output_logits_buffer_(nullptr),
@@ -43,6 +44,18 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
       cuda_output_logits_size_(0) {
 
     std::cout << "Initializing RF-DETR Engine..." << std::endl;
+
+    // Parse provider string to enum
+    std::string provider_str(provider);
+    if (provider_str == "CUDAExecutionProvider") {
+        provider_type_ = ExecutionProvider::CUDA;
+    } else if (provider_str == "TensorrtExecutionProvider") {
+        provider_type_ = ExecutionProvider::TensorRT;
+    } else if (provider_str == "TensorRTRTXExecutionProvider") {
+        provider_type_ = ExecutionProvider::TensorRT_RTX;
+    } else {
+        provider_type_ = ExecutionProvider::CPU;
+    }
 
     // Set graph optimization level based on parameter
     GraphOptimizationLevel opt_level_enum;
@@ -69,17 +82,9 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
     session_options_.SetGraphOptimizationLevel(opt_level_enum);
 
     // Configure execution provider
-    if (std::string(provider) == "CUDAExecutionProvider") {
+    if (provider_type_ == ExecutionProvider::CUDA) {
         std::cout << "Using CUDA execution provider" << std::endl;
 
-        // Optimal CUDA configuration (determined through benchmarking on RTX 5080)
-        // - CUDA Graph: 48.7% faster inference (2.92ms vs 5.69ms baseline for FP32)
-        // - cuDNN EXHAUSTIVE: Best convolution algorithm selection
-        // - Tensor Cores: Maximum workspace for optimal tensor core utilization
-        //
-        // ⚠️  IMPORTANT: This configuration is optimized for FP32 models.
-        // FP16 models may fail with CUDA Graph due to CPU fallback operations.
-        // For FP16 inference, use TensorRT Execution Provider instead.
         const char* keys[] = {
             "enable_cuda_graph",
             "cudnn_conv_algo_search",
@@ -96,6 +101,54 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
         Ort::GetApi().UpdateCUDAProviderOptions(cuda_options, keys, values, 3);
         session_options_.AppendExecutionProvider_CUDA_V2(*cuda_options);
         Ort::GetApi().ReleaseCUDAProviderOptions(cuda_options);
+    } else if (provider_type_ == ExecutionProvider::TensorRT) {
+        std::cout << "Using TensorRT execution provider" << std::endl;
+
+        if (use_fp16) {
+            std::cout << "  FP16 mode: ENABLED" << std::endl;
+        } else {
+            std::cout << "  FP16 mode: DISABLED (FP32)" << std::endl;
+        }
+
+        const char* keys[] = {
+            "trt_max_workspace_size",
+            "trt_engine_cache_enable",
+            "trt_engine_cache_path",
+            "trt_timing_cache_enable",
+            "trt_fp16_enable",
+            "trt_cuda_graph_enable"
+        };
+
+        const char* values[] = {
+            "2147483648",           // 2GB workspace
+            "1",                    // Enable engine cache
+            "./trt_cache",          // Cache directory
+            "1",                    // Enable timing cache
+            use_fp16 ? "1" : "0",  // FP16 mode
+            "1"                     // Enable CUDA graphs
+        };
+
+        OrtTensorRTProviderOptionsV2* trt_options = nullptr;
+        Ort::GetApi().CreateTensorRTProviderOptions(&trt_options);
+        Ort::GetApi().UpdateTensorRTProviderOptions(trt_options, keys, values, 6);
+        session_options_.AppendExecutionProvider_TensorRT_V2(*trt_options);
+        Ort::GetApi().ReleaseTensorRTProviderOptions(trt_options);
+
+        std::cout << "  Engine cache: ./trt_cache" << std::endl;
+        std::cout << "  Timing cache: enabled" << std::endl;
+        std::cout << "  CUDA graphs: enabled" << std::endl;
+    } else if (provider_type_ == ExecutionProvider::TensorRT_RTX) {
+        std::cout << "Using TensorRT-RTX execution provider" << std::endl;
+
+        std::unordered_map<std::string, std::string> options;
+        options["device_id"] = "0";
+        options["enable_cuda_graph"] = "1";
+        options["nv_runtime_cache_path"] = "./trt_rtx_cache";
+
+        session_options_.AppendExecutionProvider("TensorRTRTXExecutionProvider", options);
+
+        std::cout << "  Runtime cache: ./trt_rtx_cache" << std::endl;
+        std::cout << "  CUDA graphs: enabled" << std::endl;
     } else {
         std::cout << "Using CPU execution provider" << std::endl;
 
@@ -204,9 +257,9 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
     std::cout << "  Output boxes: [1, " << NUM_QUERIES << ", " << BOX_DIM << "]" << std::endl;
     std::cout << "  Output logits: [1, " << NUM_QUERIES << ", " << NUM_CLASSES << "]" << std::endl;
 
-    // Allocate CUDA device memory if using CUDA
-    if (use_cuda_) {
-        std::cout << "\nAllocating CUDA device memory..." << std::endl;
+    // Allocate GPU device memory if using GPU provider (CUDA, TensorRT, TensorRT-RTX)
+    if (provider_type_ != ExecutionProvider::CPU) {
+        std::cout << "\nAllocating GPU device memory..." << std::endl;
 
         // Create CUDA memory info
         cuda_memory_info_ = std::make_unique<Ort::MemoryInfo>("Cuda", OrtDeviceAllocator, 0, OrtMemTypeDefault);
@@ -236,8 +289,8 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
 // =============================================================================
 
 RFDETREngine::~RFDETREngine() {
-    // Free CUDA device memory if allocated
-    if (use_cuda_ && cuda_input_buffer_) {
+    // Free GPU device memory if allocated (for CUDA, TensorRT, TensorRT-RTX)
+    if (provider_type_ != ExecutionProvider::CPU && cuda_input_buffer_) {
         cudaFree(cuda_input_buffer_);
         cudaFree(cuda_output_boxes_buffer_);
         cudaFree(cuda_output_logits_buffer_);
@@ -474,8 +527,8 @@ void RFDETREngine::preprocess(const cv::Mat& image) {
 // =============================================================================
 
 std::vector<Ort::Value> RFDETREngine::forward() {
-    if (use_cuda_) {
-        // CUDA path: Copy data to GPU, run inference, copy back
+    if (provider_type_ != ExecutionProvider::CPU) {
+        // GPU path: Copy data to GPU, run inference, copy back (CUDA/TensorRT/TensorRT-RTX)
         Ort::IoBinding io_binding(*session_);
 
         // Copy preprocessed input from CPU to GPU
