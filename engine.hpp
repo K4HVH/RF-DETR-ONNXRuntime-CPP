@@ -122,13 +122,16 @@ private:
     std::vector<int64_t> output_boxes_shape_;
     std::vector<int64_t> output_logits_shape_;
 
-    // CUDA device buffers (only allocated if using CUDA)
+    // CUDA device buffers (only allocated if using GPU providers)
     void* cuda_input_buffer_;
     void* cuda_output_boxes_buffer_;
     void* cuda_output_logits_buffer_;
     size_t cuda_input_size_;
     size_t cuda_output_boxes_size_;
     size_t cuda_output_logits_size_;
+
+    // CUDA stream for async operations
+    void* cuda_stream_;  // cudaStream_t, stored as void* to avoid including cuda headers in .hpp
 
     // Original image dimensions (for denormalization)
     int original_width_;

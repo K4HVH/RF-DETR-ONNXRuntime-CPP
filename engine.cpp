@@ -41,7 +41,8 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
       cuda_output_logits_buffer_(nullptr),
       cuda_input_size_(0),
       cuda_output_boxes_size_(0),
-      cuda_output_logits_size_(0) {
+      cuda_output_logits_size_(0),
+      cuda_stream_(nullptr) {
 
     std::cout << "Initializing RF-DETR Engine..." << std::endl;
 
@@ -274,10 +275,16 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
         cudaMalloc(&cuda_output_boxes_buffer_, cuda_output_boxes_size_);
         cudaMalloc(&cuda_output_logits_buffer_, cuda_output_logits_size_);
 
+        // Create CUDA stream for async operations
+        cudaStream_t stream;
+        cudaStreamCreate(&stream);
+        cuda_stream_ = static_cast<void*>(stream);
+
         std::cout << "  CUDA Input buffer: " << (cuda_input_size_ / (1024*1024)) << " MB" << std::endl;
         std::cout << "  CUDA Output boxes buffer: " << (cuda_output_boxes_size_ / 1024) << " KB" << std::endl;
         std::cout << "  CUDA Output logits buffer: " << (cuda_output_logits_size_ / 1024) << " KB" << std::endl;
         std::cout << "  Total CUDA memory: " << ((cuda_input_size_ + cuda_output_boxes_size_ + cuda_output_logits_size_) / (1024*1024)) << " MB" << std::endl;
+        std::cout << "  CUDA stream: created for async operations" << std::endl;
     }
 
     std::cout << "RF-DETR Engine initialized successfully" << std::endl;
@@ -291,6 +298,12 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
 RFDETREngine::~RFDETREngine() {
     // Free GPU device memory if allocated (for CUDA, TensorRT, TensorRT-RTX)
     if (provider_type_ != ExecutionProvider::CPU && cuda_input_buffer_) {
+        // Destroy CUDA stream
+        if (cuda_stream_) {
+            cudaStreamDestroy(static_cast<cudaStream_t>(cuda_stream_));
+        }
+
+        // Free device memory
         cudaFree(cuda_input_buffer_);
         cudaFree(cuda_output_boxes_buffer_);
         cudaFree(cuda_output_logits_buffer_);
@@ -529,10 +542,13 @@ void RFDETREngine::preprocess(const cv::Mat& image) {
 std::vector<Ort::Value> RFDETREngine::forward() {
     if (provider_type_ != ExecutionProvider::CPU) {
         // GPU path: Copy data to GPU, run inference, copy back (CUDA/TensorRT/TensorRT-RTX)
+        // Uses async operations with CUDA stream for better performance
         Ort::IoBinding io_binding(*session_);
 
-        // Copy preprocessed input from CPU to GPU
-        cudaMemcpy(cuda_input_buffer_, input_tensor_values_.data(), cuda_input_size_, cudaMemcpyHostToDevice);
+        cudaStream_t stream = static_cast<cudaStream_t>(cuda_stream_);
+
+        // Async copy preprocessed input from CPU to GPU
+        cudaMemcpyAsync(cuda_input_buffer_, input_tensor_values_.data(), cuda_input_size_, cudaMemcpyHostToDevice, stream);
 
         // Create GPU input tensor
         auto input_tensor = Ort::Value::CreateTensor<float>(
@@ -567,12 +583,12 @@ std::vector<Ort::Value> RFDETREngine::forward() {
         // Run inference on GPU
         session_->Run(Ort::RunOptions{nullptr}, io_binding);
 
-        // Copy results from GPU back to CPU for postprocessing
-        cudaMemcpy(output_boxes_buffer_.data(), cuda_output_boxes_buffer_, cuda_output_boxes_size_, cudaMemcpyDeviceToHost);
-        cudaMemcpy(output_logits_buffer_.data(), cuda_output_logits_buffer_, cuda_output_logits_size_, cudaMemcpyDeviceToHost);
+        // Async copy results from GPU back to CPU for postprocessing
+        cudaMemcpyAsync(output_boxes_buffer_.data(), cuda_output_boxes_buffer_, cuda_output_boxes_size_, cudaMemcpyDeviceToHost, stream);
+        cudaMemcpyAsync(output_logits_buffer_.data(), cuda_output_logits_buffer_, cuda_output_logits_size_, cudaMemcpyDeviceToHost, stream);
 
-        // Synchronize to ensure copies complete
-        cudaDeviceSynchronize();
+        // Synchronize stream to ensure all async operations complete
+        cudaStreamSynchronize(stream);
 
         // Return outputs (pointing to CPU buffers for postprocessing)
         std::vector<Ort::Value> outputs;
