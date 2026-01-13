@@ -52,8 +52,6 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
         provider_type_ = ExecutionProvider::CUDA;
     } else if (provider_str == "TensorrtExecutionProvider") {
         provider_type_ = ExecutionProvider::TensorRT;
-    } else if (provider_str == "TensorRTRTXExecutionProvider") {
-        provider_type_ = ExecutionProvider::TensorRT_RTX;
     } else {
         provider_type_ = ExecutionProvider::CPU;
     }
@@ -137,18 +135,6 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
 
         std::cout << "  Engine cache: ./trt_cache" << std::endl;
         std::cout << "  Timing cache: enabled" << std::endl;
-        std::cout << "  CUDA graphs: enabled" << std::endl;
-    } else if (provider_type_ == ExecutionProvider::TensorRT_RTX) {
-        std::cout << "Using TensorRT-RTX execution provider" << std::endl;
-
-        std::unordered_map<std::string, std::string> options;
-        options["device_id"] = "0";
-        options["enable_cuda_graph"] = "1";
-        options["nv_runtime_cache_path"] = "./trt_rtx_cache";
-
-        session_options_.AppendExecutionProvider("TensorRTRTXExecutionProvider", options);
-
-        std::cout << "  Runtime cache: ./trt_rtx_cache" << std::endl;
         std::cout << "  CUDA graphs: enabled" << std::endl;
     } else {
         std::cout << "Using CPU execution provider" << std::endl;
@@ -258,7 +244,7 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
     std::cout << "  Output boxes: [1, " << NUM_QUERIES << ", " << BOX_DIM << "]" << std::endl;
     std::cout << "  Output logits: [1, " << NUM_QUERIES << ", " << NUM_CLASSES << "]" << std::endl;
 
-    // Allocate GPU device memory if using GPU provider (CUDA, TensorRT, TensorRT-RTX)
+    // Allocate GPU device memory if using GPU provider (CUDA, TensorRT)
     if (provider_type_ != ExecutionProvider::CPU) {
         std::cout << "\nAllocating GPU device memory..." << std::endl;
 
@@ -296,7 +282,7 @@ RFDETREngine::RFDETREngine(const std::wstring& model_path,
 // =============================================================================
 
 RFDETREngine::~RFDETREngine() {
-    // Free GPU device memory if allocated (for CUDA, TensorRT, TensorRT-RTX)
+    // Free GPU device memory if allocated (for CUDA, TensorRT)
     if (provider_type_ != ExecutionProvider::CPU && cuda_input_buffer_) {
         // Destroy CUDA stream
         if (cuda_stream_) {
@@ -541,7 +527,7 @@ void RFDETREngine::preprocess(const cv::Mat& image) {
 
 std::vector<Ort::Value> RFDETREngine::forward() {
     if (provider_type_ != ExecutionProvider::CPU) {
-        // GPU path: Copy data to GPU, run inference, copy back (CUDA/TensorRT/TensorRT-RTX)
+        // GPU path: Copy data to GPU, run inference, copy back (CUDA/TensorRT)
         // Uses async operations with CUDA stream for better performance
         Ort::IoBinding io_binding(*session_);
 

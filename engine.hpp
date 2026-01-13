@@ -32,8 +32,7 @@ struct Detection {
 enum class ExecutionProvider {
     CPU,            ///< CPU execution with SIMD optimizations
     CUDA,           ///< NVIDIA CUDA execution with CUDA graphs
-    TensorRT,       ///< NVIDIA TensorRT with engine caching
-    TensorRT_RTX    ///< NVIDIA TensorRT-RTX optimized for RTX GPUs
+    TensorRT        ///< NVIDIA TensorRT with engine caching
 };
 
 /**
