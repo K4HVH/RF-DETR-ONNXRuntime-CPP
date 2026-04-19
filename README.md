@@ -150,4 +150,4 @@ See `rfdetr_demo --help` for the full flag set.
 
 ## License
 
-Apache 2.0.  See `LICENSE`.
+GPL-3.0.  See `LICENSE`.

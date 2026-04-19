@@ -1,6 +1,6 @@
 // ------------------------------------------------------------------------
 // RF-DETR high-performance inference library - Public API
-// Copyright (c) 2025. Licensed under the Apache License, Version 2.0
+// Copyright (c) 2025. Licensed under the GNU General Public License v3.0
 // ------------------------------------------------------------------------
 #pragma once
 
