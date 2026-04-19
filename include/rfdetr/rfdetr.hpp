@@ -43,15 +43,7 @@ enum class Device {
 
 enum class Precision {
     FP32,
-    FP16,  // Recommended default on GPU
-    INT8
-};
-
-enum class Int8Mode {
-    None,            // No INT8 (ignored unless Precision::INT8)
-    Calibrated,      // Use pre-generated calibration table
-    EmbeddedQDQ,     // ONNX model already has QDQ nodes (explicit precision)
-    NoCalibration    // INT8 without calibration table (default dynamic ranges). May degrade accuracy.
+    FP16   // Recommended default on GPU
 };
 
 enum class OptLevel { Disable, Basic, Extended, All };
@@ -73,8 +65,6 @@ struct RFDETR_API EngineConfig {
     // Provider
     Device     device     = Device::Auto;
     Precision  precision  = Precision::FP16;
-    Int8Mode   int8_mode  = Int8Mode::NoCalibration;
-    std::filesystem::path int8_calibration_table;  // used when int8_mode == Calibrated
 
     // GPU options
     int  device_id           = 0;

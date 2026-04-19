@@ -29,9 +29,7 @@ struct Args {
     std::string output      = "output.jpg";
     std::string mode        = "image";   // image | video | benchmark
     std::string device      = "auto";    // auto | cpu | cuda | tensorrt | tensorrt-rtx
-    std::string precision   = "fp16";    // fp32 | fp16 | int8
-    std::string int8_mode   = "nocal";   // cal | qdq | nocal
-    std::string int8_table;
+    std::string precision   = "fp16";    // fp32 | fp16
     std::string cache_dir   = "trt_cache";
     std::string classes_csv = "body,head";
     int         device_id   = 0;
@@ -55,9 +53,7 @@ Usage: rfdetr_demo [options]
   --output <path>        Output file                     (default: output.jpg)
   --mode <image|video|benchmark>
   --device <auto|cpu|cuda|tensorrt|tensorrt-rtx>         (default: auto)
-  --precision <fp32|fp16|int8>                           (default: fp16)
-  --int8-mode <cal|qdq|nocal>                            (default: nocal)
-  --int8-table <path>    INT8 calibration table (when --int8-mode=cal)
+  --precision <fp32|fp16>                                (default: fp16)
   --cache-dir <path>     TensorRT engine/timing cache dir (default: trt_cache)
   --classes  "a,b,c"     Class-name CSV (default: body,head)
   --device-id <int>      GPU device id                   (default: 0)
@@ -94,8 +90,6 @@ bool parse_args(int argc, char** argv, Args& a) {
         else if (k == "--mode")         a.mode      = need("--mode");
         else if (k == "--device")       a.device    = need("--device");
         else if (k == "--precision")    a.precision = need("--precision");
-        else if (k == "--int8-mode")    a.int8_mode = need("--int8-mode");
-        else if (k == "--int8-table")   a.int8_table= need("--int8-table");
         else if (k == "--cache-dir")    a.cache_dir = need("--cache-dir");
         else if (k == "--classes")      a.classes_csv = need("--classes");
         else if (k == "--device-id")    a.device_id = std::atoi(need("--device-id"));
@@ -121,13 +115,7 @@ Device parse_device(const std::string& s) {
 }
 Precision parse_prec(const std::string& s) {
     if (s == "fp32") return Precision::FP32;
-    if (s == "int8") return Precision::INT8;
     return Precision::FP16;
-}
-Int8Mode parse_int8(const std::string& s) {
-    if (s == "cal")   return Int8Mode::Calibrated;
-    if (s == "qdq")   return Int8Mode::EmbeddedQDQ;
-    return Int8Mode::NoCalibration;
 }
 const char* name_of(Device d) {
     switch (d) {
@@ -140,7 +128,7 @@ const char* name_of(Device d) {
     return "?";
 }
 const char* name_of(Precision p) {
-    switch (p) { case Precision::FP32: return "FP32"; case Precision::FP16: return "FP16"; case Precision::INT8: return "INT8"; }
+    switch (p) { case Precision::FP32: return "FP32"; case Precision::FP16: return "FP16"; }
     return "?";
 }
 
@@ -149,8 +137,6 @@ EngineConfig make_config(const Args& a) {
     cfg.model_path = a.model;
     cfg.device     = parse_device(a.device);
     cfg.precision  = parse_prec(a.precision);
-    cfg.int8_mode  = parse_int8(a.int8_mode);
-    cfg.int8_calibration_table = a.int8_table;
     cfg.device_id  = a.device_id;
     cfg.max_batch_size = a.batch;
     cfg.enable_cuda_graph = !a.no_graph;

@@ -86,7 +86,6 @@ std::string prec_to_str(Precision p) {
     switch (p) {
         case Precision::FP32: return "FP32";
         case Precision::FP16: return "FP16";
-        case Precision::INT8: return "INT8";
     }
     return "?";
 }
@@ -171,8 +170,7 @@ void apply_tensorrt(Ort::SessionOptions& so, const EngineConfig& cfg, bool rtx_t
     const std::string workspace_s = std::to_string(cfg.trt_workspace_bytes);
     const std::string opt_level_s = cfg.trt_builder_optimization_level_max ? "5" : "3";
 
-    const bool fp16 = (cfg.precision == Precision::FP16) || (cfg.precision == Precision::INT8);
-    const bool int8 =  cfg.precision == Precision::INT8;
+    const bool fp16 = cfg.precision == Precision::FP16;
 
     std::vector<std::pair<std::string, std::string>> kv;
     auto push = [&](std::string k, std::string v) { kv.emplace_back(std::move(k), std::move(v)); };
@@ -180,7 +178,6 @@ void apply_tensorrt(Ort::SessionOptions& so, const EngineConfig& cfg, bool rtx_t
     push("device_id", device_id_s);
     push("trt_max_workspace_size", workspace_s);
     push("trt_fp16_enable", fp16 ? "1" : "0");
-    push("trt_int8_enable", int8 ? "1" : "0");
     push("trt_engine_cache_enable", "1");
     push("trt_engine_cache_path", cache_path);
     push("trt_timing_cache_enable", "1");
@@ -188,19 +185,6 @@ void apply_tensorrt(Ort::SessionOptions& so, const EngineConfig& cfg, bool rtx_t
     push("trt_builder_optimization_level", opt_level_s);
     push("trt_dla_enable", "0");
     push("trt_force_sequential_engine_build", "0");
-
-
-    if (int8) {
-        if (cfg.int8_mode == Int8Mode::Calibrated && !cfg.int8_calibration_table.empty()) {
-            push("trt_int8_calibration_table_name", cfg.int8_calibration_table.string());
-            push("trt_int8_use_native_calibration_table", "0");
-        } else if (cfg.int8_mode == Int8Mode::EmbeddedQDQ) {
-            // ONNX model has QDQ ops; TRT will use explicit precision. No calibration table needed.
-        } else {
-            // NoCalibration: TRT will fall back to per-layer default ranges and may auto-select
-            // FP16/FP32 for unquantisable layers. Noisy but runs without calibration data.
-        }
-    }
 
     if (rtx_tuned) {
         // Latency-oriented tuning ("RTX mode"): maximum builder level + reduce aux streams.
@@ -263,13 +247,8 @@ void apply_tensorrt_rtx(Ort::SessionOptions& so, const EngineConfig& cfg) {
     push("nv_runtime_cache_path", cache_path);
     if (cfg.enable_cuda_graph) push("enable_cuda_graph", "1");
 
-    std::vector<const char*> keys, vals;
-    keys.reserve(kv.size()); vals.reserve(kv.size());
-    for (auto& p : kv) { keys.push_back(p.first.c_str()); vals.push_back(p.second.c_str()); }
-
     so.AppendExecutionProvider("NvTensorRTRTX",
         std::unordered_map<std::string, std::string>(kv.begin(), kv.end()));
-    (void)keys; (void)vals;
 }
 
 } // anonymous namespace
@@ -698,10 +677,6 @@ struct Engine::Impl {
         }
         auto t3 = Clock::now();
 
-        last_timings.preprocess_ms  = ms_since(t0) - ms_since(t1);
-        last_timings.inference_ms   = ms_since(t1) - ms_since(t2);
-        last_timings.postprocess_ms = ms_since(t2) - ms_since(t3);
-        // ms_since(tN) subtraction is awkward; recompute cleanly:
         last_timings.preprocess_ms  = std::chrono::duration<double, std::milli>(t1 - t0).count();
         last_timings.inference_ms   = std::chrono::duration<double, std::milli>(t2 - t1).count();
         last_timings.postprocess_ms = std::chrono::duration<double, std::milli>(t3 - t2).count();

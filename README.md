@@ -1,7 +1,7 @@
 # rfdetr — high-performance RF-DETR inference for C++
 
 A reusable C++20 library (+ demo CLI) for running [RF-DETR](https://github.com/roboflow/rf-detr)
-object detection via ONNX Runtime with first-class support for **TensorRT** (FP16 / INT8),
+object detection via ONNX Runtime with first-class support for **TensorRT** (FP16),
 **CUDA** (with CUDA graph capture), and a **CPU** fallback with AVX2/AVX-512 SIMD preprocessing.
 
 ## Highlights
@@ -11,7 +11,7 @@ object detection via ONNX Runtime with first-class support for **TensorRT** (FP1
   `onnxruntime_providers_tensorrt_rtx`. The standard ORT 1.24.x GPU redistributable does
   **not** ship this provider — build ORT from source with `--use_nv_tensorrt_rtx` to
   enable it. When absent, the chain falls through to TensorRT seamlessly.)
-- **TensorRT**: FP16 default, FP32, INT8 (calibrated, QDQ, or no-calibration), on-disk engine + timing cache, builder optimisation level 5
+- **TensorRT**: FP16 default, FP32, on-disk engine + timing cache, builder optimisation level 5
 - **CUDA**: cuDNN `EXHAUSTIVE` algo search, optional CUDA-graph capture, IOBinding with device memory
 - **GPU preprocessing**: upload + resize + normalize + HWC→CHW entirely on the GPU when OpenCV CUDA is available
 - **Batched inference** and **async pipelined inference** (`PipelinedEngine`) for video / camera streams
@@ -39,7 +39,6 @@ apps/demo.cpp               # CLI demo / benchmark
 cmake/                      # package config for find_package(rfdetr)
 scripts/
   optimize_onnx.py          # ONNX graph optimiser
-  quantize_int8.py          # INT8 static quantisation (ORT QDQ)
   benchmark.py              # multi-provider benchmark harness
 models/inference_model.onnx # (user-supplied) RF-DETR model
 ```
@@ -139,29 +138,6 @@ rfdetr_demo --mode video     --device tensorrt --input video.mp4 --output out.mp
 ```
 
 See `rfdetr_demo --help` for the full flag set.
-
-## INT8 quantisation
-
-Two supported paths:
-
-**1. TensorRT-internal INT8 (no calibration)** — fastest to try, may lose accuracy:
-
-```bash
-rfdetr_demo --device tensorrt --precision int8 --int8-mode nocal --input test2.png
-```
-
-**2. Calibrated INT8** — generate a calibration table with the script, then:
-
-```bash
-python scripts/quantize_int8.py --model models/inference_model.onnx \
-    --calib-dir path/to/calibration_images \
-    --output   models/inference_model_int8.onnx
-rfdetr_demo --model models/inference_model_int8.onnx \
-    --device tensorrt --precision int8 --int8-mode qdq
-```
-
-The script writes an ONNX model with QDQ nodes (TensorRT explicit-precision mode), so no separate
-calibration table file is required at inference time.
 
 ## Troubleshooting
 

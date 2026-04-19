@@ -95,7 +95,6 @@ def main():
         ("cuda",         "fp32"),
         ("tensorrt",     "fp16"),
         ("tensorrt",     "fp32"),
-        ("tensorrt",     "int8"),   # no-calibration mode
         ("tensorrt-rtx", "fp16"),
     ]
 
@@ -104,8 +103,6 @@ def main():
         tag = f"{dev}/{prec}"
         if tag in args.skip: continue
         extra = ["--cache-dir", args.cache_dir]
-        if prec == "int8":
-            extra += ["--int8-mode", "nocal"]
         r = run_one(demo, dev, prec, args.input, args.iters, args.warmup, args.model, extra)
         if r: results.append(r)
 

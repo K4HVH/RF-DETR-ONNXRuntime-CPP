@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Comprehensive ONNX Model Optimization Script
-Supports multiple precisions (FP32, FP16, INT8), targets (CPU, GPU), and optimization levels
+Supports FP32 / FP16 precisions, CPU / GPU targets, and optimization levels.
 """
 import argparse
 import os
@@ -12,7 +12,6 @@ from typing import Optional
 try:
     import onnx
     import onnxruntime as ort
-    from onnxruntime.quantization import quantize_dynamic, QuantType
 except ImportError as e:
     print(f"Error: Missing required package: {e}")
     print("Install with: pip install onnx onnxruntime onnxruntime-gpu")
@@ -30,29 +29,20 @@ class ONNXOptimizer:
         'all': ort.GraphOptimizationLevel.ORT_ENABLE_ALL,
     }
 
-    # Quantization types
-    QUANT_TYPES = {
-        'int8': QuantType.QInt8,
-        'uint8': QuantType.QUInt8,
-    }
-
     def __init__(self, input_model: str, output_model: str, precision: str,
                  target: str, opt_level: str, provider: Optional[str] = None,
-                 tensorrt_path: Optional[str] = None,
-                 per_channel: bool = True, reduce_range: bool = False):
+                 tensorrt_path: Optional[str] = None):
         """
         Initialize optimizer
 
         Args:
             input_model: Path to input ONNX model
             output_model: Path for output optimized model
-            precision: One of 'fp32', 'fp16', 'int8'
+            precision: One of 'fp32', 'fp16'
             target: One of 'cpu', 'gpu'
             opt_level: One of 'disable', 'basic', 'extended', 'all'
             provider: Execution provider ('cpu', 'cuda', 'rocm', 'dml', 'tensorrt')
             tensorrt_path: Optional path to TensorRT installation
-            per_channel: Use per-channel quantization (better accuracy)
-            reduce_range: Reduce quantization range for CPU compatibility
         """
         self.input_model = input_model
         self.output_model = output_model
@@ -61,8 +51,6 @@ class ONNXOptimizer:
         self.opt_level = opt_level.lower()
         self.provider = provider.lower() if provider else None
         self.tensorrt_path = tensorrt_path
-        self.per_channel = per_channel
-        self.reduce_range = reduce_range
 
         # Validate inputs
         self._validate_inputs()
@@ -72,22 +60,14 @@ class ONNXOptimizer:
         if not os.path.exists(self.input_model):
             raise FileNotFoundError(f"Input model not found: {self.input_model}")
 
-        if self.precision not in ['fp32', 'fp16', 'int8']:
-            raise ValueError(f"Invalid precision: {self.precision}. Must be one of: fp32, fp16, int8")
+        if self.precision not in ['fp32', 'fp16']:
+            raise ValueError(f"Invalid precision: {self.precision}. Must be one of: fp32, fp16")
 
         if self.target not in ['cpu', 'gpu']:
             raise ValueError(f"Invalid target: {self.target}. Must be one of: cpu, gpu")
 
         if self.opt_level not in self.OPT_LEVELS:
             raise ValueError(f"Invalid optimization level: {self.opt_level}. Must be one of: {', '.join(self.OPT_LEVELS.keys())}")
-
-        # INT8 quantization is NOT supported on GPU
-        if self.precision == 'int8' and self.target == 'gpu':
-            raise ValueError(
-                "INT8 quantization is not supported on GPU.\n"
-                "INT8 creates CPU-only operators (DynamicQuantizeLinear, ConvInteger) that have no GPU implementation.\n"
-                "For GPU acceleration, use --precision fp16 or --precision fp32 instead."
-            )
 
         # Check for GPU support if target is GPU
         if self.target == 'gpu':
@@ -274,36 +254,6 @@ class ONNXOptimizer:
             print(f"[ERROR] FP16 conversion failed: {e}")
             raise
 
-    def _quantize_to_int8(self, input_path: str, output_path: str):
-        """Quantize model to INT8"""
-        print("Quantizing to INT8...")
-        print(f"  Per-channel: {self.per_channel}")
-        print(f"  Reduce range: {self.reduce_range}")
-
-        # Choose quantization type based on target
-        # CPU typically prefers QUInt8, GPU can use QInt8
-        if self.target == 'cpu':
-            quant_type = QuantType.QUInt8
-        else:
-            quant_type = QuantType.QInt8
-
-        print(f"  Quantization type: {quant_type}")
-
-        try:
-            quantize_dynamic(
-                model_input=input_path,
-                model_output=output_path,
-                weight_type=quant_type,
-                per_channel=self.per_channel,
-                reduce_range=self.reduce_range,
-            )
-
-            print("[OK] INT8 quantization complete")
-
-        except Exception as e:
-            print(f"[ERROR] Quantization failed: {e}")
-            raise
-
     def optimize(self) -> bool:
         """
         Run the optimization pipeline
@@ -327,46 +277,27 @@ class ONNXOptimizer:
             temp_model2 = self.output_model + ".temp2.onnx"
             current_model = self.input_model
 
-            # For INT8: quantize first, then optimize (quantizer can't handle optimized models with custom ops)
-            # For FP16/FP32: optimize first, then convert
-
-            if self.precision == 'int8':
-                # Step 1: INT8 Quantization (on original model)
-                self._print_header("Step 1: INT8 Quantization")
-                self._quantize_to_int8(self.input_model, temp_model)
+            # Step 1: Graph Optimization
+            if self.opt_level != 'disable':
+                self._print_header("Step 1: Graph Optimization")
+                self._optimize_graph(current_model, temp_model)
                 current_model = temp_model
+            else:
+                print("\n[SKIP] Graph optimization disabled")
 
-                # Step 2: Graph Optimization (on quantized model)
-                if self.opt_level != 'disable':
-                    self._print_header("Step 2: Graph Optimization")
-                    self._optimize_graph(current_model, self.output_model)
-                else:
-                    print("\n[SKIP] Graph optimization disabled")
+            # Step 2: Precision Conversion
+            if self.precision == 'fp16':
+                self._print_header("Step 2: FP16 Conversion")
+                self._convert_to_fp16(current_model, self.output_model)
+
+            else:  # fp32
+                # Just copy/rename if we did graph optimization
+                if current_model != self.input_model:
                     import shutil
                     shutil.move(current_model, self.output_model)
-
-            else:
-                # Step 1: Graph Optimization
-                if self.opt_level != 'disable':
-                    self._print_header("Step 1: Graph Optimization")
-                    self._optimize_graph(current_model, temp_model)
-                    current_model = temp_model
                 else:
-                    print("\n[SKIP] Graph optimization disabled")
-
-                # Step 2: Precision Conversion
-                if self.precision == 'fp16':
-                    self._print_header("Step 2: FP16 Conversion")
-                    self._convert_to_fp16(current_model, self.output_model)
-
-                else:  # fp32
-                    # Just copy/rename if we did graph optimization
-                    if current_model != self.input_model:
-                        import shutil
-                        shutil.move(current_model, self.output_model)
-                    else:
-                        import shutil
-                        shutil.copy2(current_model, self.output_model)
+                    import shutil
+                    shutil.copy2(current_model, self.output_model)
 
             # Clean up temp files if they exist
             if os.path.exists(temp_model):
@@ -416,9 +347,6 @@ Examples:
   # Optimize for CPU with FP32 (graph optimization only)
   python optimize_onnx.py model.onnx model_opt.onnx --precision fp32 --target cpu --opt-level extended
 
-  # Quantize to INT8 for CPU
-  python optimize_onnx.py model.onnx model_int8.onnx --precision int8 --target cpu --opt-level all
-
   # Convert to FP16 for CUDA GPU
   python optimize_onnx.py model.onnx model_fp16.onnx --precision fp16 --target gpu --opt-level all --provider cuda
 
@@ -433,9 +361,6 @@ Examples:
 
   # Convert to FP16 for DirectML (Windows)
   python optimize_onnx.py model.onnx model_fp16.onnx --precision fp16 --target gpu --opt-level all --provider dml
-
-  # CPU-compatible INT8 with per-tensor quantization
-  python optimize_onnx.py model.onnx model_int8.onnx --precision int8 --target cpu --no-per-channel --reduce-range
         """
     )
 
@@ -445,7 +370,7 @@ Examples:
 
     # Optimization settings
     parser.add_argument('--precision', type=str, default='fp32',
-                        choices=['fp32', 'fp16', 'int8'],
+                        choices=['fp32', 'fp16'],
                         help='Target precision (default: fp32)')
 
     parser.add_argument('--target', type=str, default='cpu',
@@ -460,18 +385,9 @@ Examples:
                         choices=['cpu', 'cuda', 'rocm', 'dml', 'tensorrt', 'tensorrt-rtx'],
                         help='Explicit execution provider for optimization (default: auto-detect)')
 
-    # Quantization settings
-    parser.add_argument('--no-per-channel', dest='per_channel', action='store_false',
-                        help='Disable per-channel quantization (use per-tensor instead)')
-
-    parser.add_argument('--reduce-range', action='store_true',
-                        help='Reduce quantization range for better CPU compatibility')
-
     # Advanced settings
     parser.add_argument('--tensorrt-path', type=str, default=None,
                         help='Path to TensorRT installation (default: auto-detect)')
-
-    parser.set_defaults(per_channel=True)
 
     args = parser.parse_args()
 
@@ -484,7 +400,7 @@ Examples:
     # Validate precision/target combinations
     if args.precision == 'fp16' and args.target == 'cpu':
         print("Warning: FP16 on CPU may not provide performance benefits")
-        print("Consider using FP32 or INT8 for CPU targets")
+        print("Consider using FP32 for CPU targets")
 
     # Create optimizer and run
     try:
@@ -496,8 +412,6 @@ Examples:
             opt_level=args.opt_level,
             provider=args.provider,
             tensorrt_path=args.tensorrt_path,
-            per_channel=args.per_channel,
-            reduce_range=args.reduce_range
         )
 
         success = optimizer.optimize()
