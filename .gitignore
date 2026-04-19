@@ -30,6 +30,4 @@ benchmark_results.json
 benchmark_*_results.json
 models/inference_model_*.onnx
 *_ctx.onnx
-test*.png
-test*.jpg
 test*.mp4
