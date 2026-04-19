@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-linux-cpu:
+    name: Linux / CPU-only build
+    runs-on: ubuntu-24.04
+    env:
+      ORT_VERSION: 1.19.2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              cmake ninja-build g++-13 libopencv-dev
+
+      - name: Download ONNX Runtime (CPU)
+        run: |
+          curl -L -o ort.tgz \
+            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
+          tar xzf ort.tgz
+          mv "onnxruntime-linux-x64-${ORT_VERSION}" ort
+
+      - name: Configure
+        env:
+          CC:  gcc-13
+          CXX: g++-13
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DRFDETR_ONNXRUNTIME_ROOT="$(pwd)/ort" \
+            -DRFDETR_ENABLE_CUDA=OFF \
+            -DRFDETR_ENABLE_OPENCV_CUDA=OFF \
+            -DRFDETR_SIMD_LEVEL=AVX2 \
+            -DRFDETR_INSTALL=ON
+
+      - name: Build
+        run: cmake --build build --config Release -j
+
+      - name: Verify demo links and runs
+        run: |
+          export LD_LIBRARY_PATH="$(pwd)/ort/lib:$LD_LIBRARY_PATH"
+          ./build/bin/rfdetr_demo --help || true
+
+      - name: Install (staging)
+        run: |
+          DESTDIR=/tmp/stage cmake --install build --config Release
+          find /tmp/stage -maxdepth 4 -type f | sort
+
+  build-windows-cpu:
+    name: Windows / CPU-only build
+    runs-on: windows-2022
+    env:
+      ORT_VERSION: 1.19.2
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download ONNX Runtime (CPU)
+        shell: pwsh
+        run: |
+          $url = "https://github.com/microsoft/onnxruntime/releases/download/v$env:ORT_VERSION/onnxruntime-win-x64-$env:ORT_VERSION.zip"
+          Invoke-WebRequest -Uri $url -OutFile ort.zip
+          Expand-Archive -Path ort.zip -DestinationPath .
+          Rename-Item -Path "onnxruntime-win-x64-$env:ORT_VERSION" -NewName ort
+
+      - name: Install OpenCV
+        shell: pwsh
+        run: |
+          choco install opencv --version=4.10.0 -y --no-progress
+          # Point CMake at the install.
+          $ocv = Get-ChildItem 'C:\tools\opencv\build' -Directory -ErrorAction SilentlyContinue
+          if (-not $ocv) { $ocv = Get-Item 'C:\tools\opencv\build' }
+          echo "OpenCV_DIR=$($ocv.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Configure
+        shell: cmd
+        run: |
+          cmake -S . -B build -A x64 ^
+            -DRFDETR_ONNXRUNTIME_ROOT="%CD%\ort" ^
+            -DRFDETR_OPENCV_ROOT="%OpenCV_DIR%" ^
+            -DRFDETR_ENABLE_CUDA=OFF ^
+            -DRFDETR_ENABLE_OPENCV_CUDA=OFF ^
+            -DRFDETR_SIMD_LEVEL=AVX2
+
+      - name: Build
+        run: cmake --build build --config Release
