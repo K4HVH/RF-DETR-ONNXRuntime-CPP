@@ -75,10 +75,16 @@ jobs:
         shell: pwsh
         run: |
           choco install opencv --version=4.10.0 -y --no-progress
-          # Point CMake at the install.
-          $ocv = Get-ChildItem 'C:\tools\opencv\build' -Directory -ErrorAction SilentlyContinue
-          if (-not $ocv) { $ocv = Get-Item 'C:\tools\opencv\build' }
-          echo "OpenCV_DIR=$($ocv.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          # OpenCVConfig.cmake lives in build/x64/vc16/lib for the prebuilt binary.
+          $cands = @(
+            'C:\tools\opencv\build\x64\vc16\lib',
+            'C:\tools\opencv\build\x64\vc15\lib',
+            'C:\tools\opencv\build'
+          )
+          $cv = $cands | Where-Object { Test-Path (Join-Path $_ 'OpenCVConfig.cmake') -or (Split-Path -Leaf $_) -eq 'build' } | Select-Object -First 1
+          if (-not $cv) { throw 'OpenCVConfig.cmake not found' }
+          echo "OpenCV_DIR=$cv" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "PATH=C:\tools\opencv\build\x64\vc16\bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Configure
         shell: cmd

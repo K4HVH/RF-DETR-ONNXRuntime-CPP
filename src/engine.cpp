@@ -59,7 +59,18 @@ inline double ms_since(Clock::time_point t0) {
     return std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
 }
 
-std::wstring to_wstring(const std::filesystem::path& p) { return p.wstring(); }
+// ORTCHAR_T is wchar_t on Windows and char elsewhere; use path::native on both.
+inline const ORTCHAR_T* ort_path(const std::filesystem::path& p) {
+#ifdef _WIN32
+    static thread_local std::wstring buf;
+    buf = p.wstring();
+    return buf.c_str();
+#else
+    static thread_local std::string buf;
+    buf = p.string();
+    return buf.c_str();
+#endif
+}
 
 std::string dev_to_str(Device d) {
     switch (d) {
@@ -419,7 +430,7 @@ struct Engine::Impl {
                 break;
         }
 
-        session = std::make_unique<Ort::Session>(env, to_wstring(cfg.model_path).c_str(), so);
+        session = std::make_unique<Ort::Session>(env, ort_path(cfg.model_path), so);
 
         // IO names
         in_name_store.clear();  in_names.clear();
