@@ -38,7 +38,6 @@ src/                        # implementation
 apps/demo.cpp               # CLI demo / benchmark
 cmake/                      # package config for find_package(rfdetr)
 scripts/
-  optimize_onnx.py          # ONNX graph optimiser
   benchmark.py              # multi-provider benchmark harness
 models/inference_model.onnx # (user-supplied) RF-DETR model
 ```
