@@ -22,3 +22,10 @@ CMakeUserPresets.json
 build/
 out/
 output.jpg
+output_*.jpg
+trt_cache/
+benchmark_results.json
+*_ctx.onnx
+test*.png
+test*.jpg
+test*.mp4
