@@ -79,7 +79,7 @@ cmake --build build -j
 | `RFDETR_INSTALL`            | `ON`    | Emit install rules + CMake package config  |
 | `RFDETR_ENABLE_CUDA`        | `ON`    | Enable CUDA Toolkit integration            |
 | `RFDETR_ENABLE_OPENCV_CUDA` | `ON`    | Use OpenCV CUDA modules for preproc        |
-| `RFDETR_SIMD_LEVEL`         | `AVX2`  | `NONE`, `AVX2`, `AVX512`                   |
+| `RFDETR_SIMD_LEVEL`         | `AVX512`| `NONE`, `AVX2`, `AVX512`                   |
 | `RFDETR_ONNXRUNTIME_ROOT`   | auto    | Path to an ORT install                     |
 
 ## Consuming the library

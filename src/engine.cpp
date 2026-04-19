@@ -405,6 +405,11 @@ struct Engine::Impl {
                 break;
             case Device::CPU:
             case Device::Auto:
+                if (cfg.precision == Precision::FP16) {
+                    std::cerr << "[rfdetr] Warning: FP16 requested on CPU; ORT's CPU provider "
+                                 "has no native FP16 kernels on x86 (casts to FP32 internally). "
+                                 "Using FP32." << std::endl;
+                }
                 active_prec = Precision::FP32;
                 break;
         }

@@ -10,7 +10,7 @@ option(RFDETR_INSTALL        "Generate install/export rules"      ON)
 option(RFDETR_ENABLE_CUDA    "Enable CUDA toolkit integration"    ON)
 option(RFDETR_ENABLE_OPENCV_CUDA "Use OpenCV CUDA modules for preprocessing if available" ON)
 
-set(RFDETR_SIMD_LEVEL "AVX2" CACHE STRING "CPU SIMD level (NONE|AVX2|AVX512)")
+set(RFDETR_SIMD_LEVEL "AVX512" CACHE STRING "CPU SIMD level (NONE|AVX2|AVX512)")
 set_property(CACHE RFDETR_SIMD_LEVEL PROPERTY STRINGS NONE AVX2 AVX512)
 
 set(RFDETR_ONNXRUNTIME_ROOT "" CACHE PATH "Root of ONNX Runtime install (include/ + lib/)")
