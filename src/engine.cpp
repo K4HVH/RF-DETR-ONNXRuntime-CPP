@@ -432,8 +432,8 @@ struct Engine::Impl {
     }
 
     void resolve_model_shape() {
-        auto in_info  = session->GetInputTypeInfo(0).GetTensorTypeAndShapeInfo();
-        auto in_shape = in_info.GetShape();
+        auto in_type_info = session->GetInputTypeInfo(0);
+        auto in_shape = in_type_info.GetTensorTypeAndShapeInfo().GetShape();
         if (in_shape.size() != 4) {
             throw std::runtime_error("Expected 4-D input tensor (NCHW)");
         }
@@ -445,8 +445,10 @@ struct Engine::Impl {
         if (session->GetOutputCount() < 2) {
             throw std::runtime_error("Expected at least 2 outputs (pred_boxes, pred_logits)");
         }
-        auto box_info  = session->GetOutputTypeInfo(0).GetTensorTypeAndShapeInfo().GetShape();
-        auto log_info  = session->GetOutputTypeInfo(1).GetTensorTypeAndShapeInfo().GetShape();
+        auto box_type_info = session->GetOutputTypeInfo(0);
+        auto log_type_info = session->GetOutputTypeInfo(1);
+        auto box_info = box_type_info.GetTensorTypeAndShapeInfo().GetShape();
+        auto log_info = log_type_info.GetTensorTypeAndShapeInfo().GetShape();
         mi.num_queries = static_cast<int>(box_info.size() >= 2 && box_info[1] > 0 ? box_info[1] : 300);
         mi.box_dim     = static_cast<int>(box_info.size() >= 3 && box_info[2] > 0 ? box_info[2] : 4);
         mi.num_classes = static_cast<int>(log_info.size() >= 3 && log_info[2] > 0 ? log_info[2] : 91);
